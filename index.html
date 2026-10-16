@@ -2,7 +2,7 @@
 <html lang="en-GB">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Cook Log">
@@ -64,7 +64,7 @@
   .meal .grow{flex:1;min-width:0}
 
   /* dialogs */
-  dialog{border:none;border-radius:18px;padding:0;width:min(520px,calc(100vw - 16px));background:var(--bg);color:var(--ink);max-height:calc(100dvh - 16px);overflow:auto}
+  dialog{border:none;border-radius:18px;padding:0;width:min(520px,calc(100vw - 16px));background:var(--bg);color:var(--ink);max-height:calc(100dvh - 16px);overflow:auto;margin:8px auto auto}
   dialog::backdrop{background:rgba(0,0,0,.5)}
   form.sheet{padding:14px;display:grid;gap:8px}
   .sheet h2{margin:0;font-size:1.1rem}
@@ -86,6 +86,11 @@
   .auth{max-width:380px;margin:10vh auto 0;padding:0 16px}
   .auth form{display:grid;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px}
   .banner{background:var(--card);border:1px solid var(--danger);color:var(--danger);border-radius:var(--radius);padding:14px;margin:20px 16px}
+  .ver{background:none;border:0;color:var(--muted);font-size:.65rem;font-weight:400;padding:8px 4px;cursor:pointer;vertical-align:middle}
+  .verlogin{text-align:center;color:var(--muted);font-size:.75rem;margin-top:10px}
+  #updateBar{position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:30;display:flex;gap:10px;
+    align-items:center;justify-content:space-between;background:var(--ink);color:var(--bg);padding:8px 8px 8px 14px;border-radius:12px;
+    box-shadow:0 6px 20px rgba(0,0,0,.3);font-size:.9rem}
 
   /* cook screen (full screen, fits without scrolling) */
   #cookView{position:fixed;inset:0;z-index:20;background:var(--bg);display:flex;flex-direction:column;
@@ -116,22 +121,28 @@
 <!-- ===== Login ===== -->
 <div id="authView" class="auth hidden">
   <h1 style="margin:0 0 12px">🍳 Cook Log</h1>
-  <form id="authForm">
-    <label>Email <input id="email" type="email" autocomplete="email" required></label>
-    <label>Password <input id="password" type="password" autocomplete="current-password" minlength="8" required></label>
+  <form id="authForm" method="post" action="#" autocomplete="on">
+    <label>Email <input id="email" name="username" type="email" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
+    <label>Password <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" required></label>
     <div class="msg" id="authMsg" role="status"></div>
     <button class="btn primary" type="submit">Sign in</button>
   </form>
+  <div class="verlogin" id="verLogin"></div>
 </div>
 
 <div id="configBanner" class="banner hidden">
   <strong>Not configured yet.</strong> Set <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> near the top of the script.
 </div>
 
+<div id="updateBar" class="hidden" role="status">
+  <span>New version available.</span>
+  <button class="btn primary small" id="updateBtn" type="button">Update now</button>
+</div>
+
 <!-- ===== App ===== -->
 <div id="appView" class="hidden">
   <header>
-    <h1>🍳 Cook Log</h1>
+    <h1>🍳 Cook Log <button class="ver" id="verBtn" type="button" aria-label="Check for updates"></button></h1>
     <button class="btn primary small" id="addBtn">+ Add food</button>
     <button class="btn small" id="signOutBtn" aria-label="Sign out">Sign out</button>
   </header>
@@ -236,6 +247,10 @@
 const SUPABASE_URL = "https://stonomshevyjzwsiicld.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_Ic4zpL0pBjDHnpiSaBqkKw_9cfrky2p";
 
+/* Bump this on every release. The app compares it with the live index.html
+   on launch / return to foreground and reloads itself when they differ. */
+const APP_VERSION = "4";
+
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -250,11 +265,45 @@ const tempStr = f => f.temp_auto ? "Auto temp" : (f.temp_c != null ? `${f.temp_c
 const settingStr = f => [f.appliance, f.mode, tempStr(f)].filter(Boolean).join(" · ");
 const applianceClass = f => f.appliance === "Air fryer" ? "air" : "grill";
 
+/* ---------- version + self-update (keeps Home Screen shortcuts current) ---------- */
+$("verBtn").textContent = "v" + APP_VERSION;
+$("verLogin").textContent = "Cook Log v" + APP_VERSION;
+let lastCheck = 0;
+const canReloadNow = () => !run && !$("dlg").open && !$("mealDlg").open;
+function flashVer(t){ $("verBtn").textContent = t; setTimeout(() => { $("verBtn").textContent = "v" + APP_VERSION; }, 2500); }
+async function remoteVersion(){
+  const r = await fetch(location.pathname + "?cb=" + Date.now(), { cache: "no-store" });
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const m = (await r.text()).match(/const\s+APP_VERSION\s*=\s*"([^"]+)"/);
+  return m ? m[1] : null;
+}
+function reloadLatest(tag){
+  try { sessionStorage.setItem("cooklog_reloaded", String(tag)); } catch (e) {}
+  location.replace(location.pathname + "?v=" + encodeURIComponent(tag));
+}
+async function checkUpdate(manual){
+  if (!manual && Date.now() - lastCheck < 60000) return;
+  lastCheck = Date.now();
+  let v = null;
+  try { v = await remoteVersion(); } catch (e) { if (manual) flashVer("offline"); return; }
+  if (!v) return;
+  if (v === APP_VERSION) { if (manual) flashVer("latest ✓"); return; }
+  let tried = null; try { tried = sessionStorage.getItem("cooklog_reloaded"); } catch (e) {}
+  // Reload automatically when it's safe (no timer running, no form open) and we haven't just tried this version.
+  if (canReloadNow() && (manual || tried !== v)) { reloadLatest(v); return; }
+  $("updateBar").classList.remove("hidden");
+}
+$("verBtn").addEventListener("click", () => checkUpdate(true));
+$("updateBtn").addEventListener("click", () => reloadLatest(String(Date.now())));
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(false); });
+window.addEventListener("pageshow", e => { if (e.persisted) checkUpdate(false); });
+
 const configured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
 let db = null, foods = [], meals = [], tab = "foods", resumed = false;
 
 /* ---------- boot + auth ---------- */
 (async function init(){
+  checkUpdate(false);
   if (!configured) { $("configBanner").classList.remove("hidden"); return; }
   db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   db.auth.onAuthStateChange((_e, session) => showFor(session));
@@ -263,6 +312,7 @@ let db = null, foods = [], meals = [], tab = "foods", resumed = false;
 })();
 
 function showFor(session){
+  if (!session) $("password").value = "";
   $("authView").classList.toggle("hidden", !!session);
   $("appView").classList.toggle("hidden", !session);
   if (session) loadAll();
@@ -360,6 +410,7 @@ function openFood(id){
   $("f_auto").checked = !!f?.temp_auto;
   syncAuto();
   dlg.showModal();
+  if (document.activeElement) document.activeElement.blur(); // don't auto-open the keyboard on iOS
 }
 
 $("foodForm").addEventListener("submit", async e => {
@@ -451,6 +502,7 @@ function openMeal(id){
   draft = m ? mealFoods(m).map(f => f.id) : [];
   renderDraft();
   mealDlg.showModal();
+  if (document.activeElement) document.activeElement.blur();
 }
 
 $("mealForm").addEventListener("submit", async e => {

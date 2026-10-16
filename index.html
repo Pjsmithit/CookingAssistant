@@ -33,7 +33,8 @@
   .btn.small{min-height:34px;padding:5px 10px;font-size:.9rem}
   .btn.big{min-height:54px;font-size:1.15rem;width:100%;border-radius:14px}
   .btn:disabled{opacity:.5}
-  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);min-height:40px}
+  /* iOS Safari zooms the page when a focused field is under 16px, so pin it explicitly */
+  input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);min-height:40px;font-size:16px;-webkit-text-size-adjust:100%}
   label{display:grid;gap:3px;font-size:.8rem;color:var(--muted)}
   .msg{font-size:.85rem;min-height:1.1em;color:var(--danger)}
   .msg.ok{color:var(--air)}

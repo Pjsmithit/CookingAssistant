@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1c1917">
+<title>Cook Log</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#faf7f2; --card:#ffffff; --ink:#1c1917; --muted:#78716c; --line:#e7e1d8;
+    --accent:#d9480f; --accent-ink:#fff; --air:#0b7285; --grill:#c2410c; --danger:#b91c1c;
+    --radius:14px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#1c1917; --card:#292524; --ink:#f5f5f4; --muted:#a8a29e; --line:#3f3a36;
+      --accent:#fb923c; --accent-ink:#1c1917; --air:#22b8cf; --grill:#fb923c; --danger:#f87171; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+  .wrap{max-width:720px;margin:0 auto;padding:0 16px 96px}
+  header{display:flex;align-items:center;justify-content:space-between;padding:18px 0 10px}
+  h1{font-size:1.4rem;margin:0}
+  button,input,select,textarea{font:inherit;color:inherit}
+  .btn{border:1px solid var(--line);background:var(--card);padding:10px 14px;border-radius:10px;cursor:pointer;min-height:44px}
+  .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:600}
+  .btn.danger{color:var(--danger)}
+  .btn.small{min-height:36px;padding:6px 10px;font-size:.9rem}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px}
+  .toolbar input[type=search]{flex:1 1 180px}
+  input,select,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);min-height:44px}
+  textarea{min-height:80px;resize:vertical}
+  .chips{display:flex;gap:6px}
+  .chip{border:1px solid var(--line);background:var(--card);border-radius:999px;padding:8px 14px;cursor:pointer;min-height:40px}
+  .chip[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+  .list{display:grid;gap:10px}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;cursor:pointer}
+  .item:active{transform:scale(.995)}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+  .name{font-weight:650;font-size:1.05rem}
+  .time{font-variant-numeric:tabular-nums;font-weight:700;font-size:1.15rem}
+  .meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .tag{font-size:.82rem;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .tag.air{color:var(--air);border-color:var(--air)}
+  .tag.grill{color:var(--grill);border-color:var(--grill)}
+  .notes{margin-top:8px;color:var(--muted);font-size:.92rem;white-space:pre-wrap}
+  .empty{text-align:center;color:var(--muted);padding:40px 10px}
+  .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:5;box-shadow:0 6px 20px rgba(0,0,0,.25);border-radius:999px;padding:14px 22px}
+  dialog{border:none;border-radius:18px;padding:0;width:min(560px,94vw);background:var(--bg);color:var(--ink);max-height:92vh}
+  dialog::backdrop{background:rgba(0,0,0,.5)}
+  form.sheet{padding:18px;display:grid;gap:12px}
+  .sheet h2{margin:0 0 2px;font-size:1.2rem}
+  label{display:grid;gap:4px;font-size:.88rem;color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+  .check{display:flex;align-items:center;gap:10px;color:var(--ink);font-size:1rem;min-height:44px}
+  .check input{width:22px;height:22px;min-height:0}
+  .actions{display:flex;gap:8px;justify-content:space-between;margin-top:4px}
+  .actions .right{display:flex;gap:8px}
+  .auth{max-width:380px;margin:12vh auto 0;padding:0 16px}
+  .auth form{display:grid;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  .msg{font-size:.9rem;min-height:1.2em;color:var(--danger)}
+  .msg.ok{color:var(--air)}
+  .banner{background:var(--card);border:1px solid var(--danger);color:var(--danger);border-radius:var(--radius);padding:14px;margin:20px 0}
+  .hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<!-- ===== Login ===== -->
+<div id="authView" class="auth hidden">
+  <h1 style="margin:0 0 14px">🍳 Cook Log</h1>
+  <form id="authForm">
+    <label>Email <input id="email" type="email" autocomplete="email" required></label>
+    <label>Password <input id="password" type="password" autocomplete="current-password" minlength="8" required></label>
+    <div class="msg" id="authMsg" role="status"></div>
+    <button class="btn primary" type="submit" id="signInBtn">Sign in</button>
+    <button class="btn" type="button" id="signUpBtn">Create account</button>
+  </form>
+</div>
+
+<!-- ===== App ===== -->
+<div id="appView" class="wrap hidden">
+  <header>
+    <h1>🍳 Cook Log</h1>
+    <button class="btn small" id="signOutBtn">Sign out</button>
+  </header>
+
+  <div class="toolbar">
+    <input type="search" id="search" placeholder="Search foods…" aria-label="Search foods">
+    <div class="chips" role="group" aria-label="Filter by appliance">
+      <button class="chip" data-f="all" aria-pressed="true">All</button>
+      <button class="chip" data-f="Air fryer" aria-pressed="false">Air fryer</button>
+      <button class="chip" data-f="Grill" aria-pressed="false">Grill</button>
+    </div>
+  </div>
+
+  <div id="listMsg" class="msg" role="status"></div>
+  <div id="list" class="list"></div>
+
+  <button class="btn primary fab" id="addBtn">+ Add food</button>
+</div>
+
+<div id="configBanner" class="wrap banner hidden">
+  <strong>Not configured yet.</strong> Open <code>index.html</code>, and set <code>SUPABASE_URL</code> and
+  <code>SUPABASE_ANON_KEY</code> near the top of the script (see README).
+</div>
+
+<!-- ===== Add / edit dialog ===== -->
+<dialog id="dlg">
+  <form class="sheet" id="foodForm" method="dialog">
+    <h2 id="dlgTitle">Add food</h2>
+    <label>Food <input id="f_name" required maxlength="80" placeholder="e.g. Salmon fillets" autocomplete="off"></label>
+    <div class="grid2">
+      <label>Appliance
+        <select id="f_appliance">
+          <option>Air fryer</option>
+          <option>Grill</option>
+        </select>
+      </label>
+      <label>Mode / setting <input id="f_mode" maxlength="40" placeholder="Air Fry, Roast, Max Grill…" autocomplete="off"></label>
+    </div>
+    <div class="grid3">
+      <label>Temp (°C) <input id="f_temp" type="number" inputmode="numeric" min="0" max="300" placeholder="180"></label>
+      <label>Minutes <input id="f_min" type="number" inputmode="numeric" min="0" max="999" placeholder="12" required></label>
+      <label>Seconds <input id="f_sec" type="number" inputmode="numeric" min="0" max="59" placeholder="0"></label>
+    </div>
+    <label>Quantity / state <input id="f_qty" maxlength="60" placeholder="e.g. 2 fillets, from frozen" autocomplete="off"></label>
+    <div class="grid2">
+      <label class="check"><input type="checkbox" id="f_preheat"> Preheat</label>
+      <label class="check"><input type="checkbox" id="f_turn"> Turn / shake halfway</label>
+    </div>
+    <label>Notes <textarea id="f_notes" maxlength="1000" placeholder="Anything you want to remember"></textarea></label>
+    <div class="msg" id="formMsg" role="status"></div>
+    <div class="actions">
+      <button type="button" class="btn danger hidden" id="deleteBtn">Delete</button>
+      <div class="right" style="margin-left:auto">
+        <button type="button" class="btn" id="cancelBtn">Cancel</button>
+        <button type="submit" class="btn primary" id="saveBtn">Save</button>
+      </div>
+    </div>
+  </form>
+</dialog>
+
+<script>
+/* ===========================================================
+   CONFIG — paste your Supabase project values here.
+   The anon key is designed to be public; your data is protected
+   by login + row level security (see supabase-setup.sql).
+   =========================================================== */
+const SUPABASE_URL = "https://stonomshevyjzwsiicld.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_Ic4zpL0pBjDHnpiSaBqkKw_9cfrky2p";
+
+/* ---------- helpers ---------- */
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmtTime = secs => {
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return s ? `${m}m ${String(s).padStart(2,"0")}s` : `${m} min`;
+};
+
+const configured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
+let db = null;
+let foods = [];
+let filter = "all";
+let editingId = null;
+
+/* ---------- boot ---------- */
+(async function init(){
+  if (!configured) { $("configBanner").classList.remove("hidden"); return; }
+  db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  db.auth.onAuthStateChange((_evt, session) => showFor(session));
+  const { data } = await db.auth.getSession();
+  showFor(data.session);
+})();
+
+function showFor(session){
+  const signedIn = !!session;
+  $("authView").classList.toggle("hidden", signedIn);
+  $("appView").classList.toggle("hidden", !signedIn);
+  if (signedIn) loadFoods();
+}
+
+/* ---------- auth ---------- */
+$("authForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const msg = $("authMsg"); msg.className = "msg"; msg.textContent = "Signing in…";
+  const { error } = await db.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
+  msg.textContent = error ? error.message : "";
+});
+$("signUpBtn").addEventListener("click", async () => {
+  const msg = $("authMsg"); msg.className = "msg";
+  if (!$("authForm").reportValidity()) return;
+  msg.textContent = "Creating account…";
+  const { data, error } = await db.auth.signUp({ email: $("email").value.trim(), password: $("password").value });
+  if (error) { msg.textContent = error.message; return; }
+  if (!data.session) { msg.className = "msg ok"; msg.textContent = "Check your email to confirm, then sign in."; }
+});
+$("signOutBtn").addEventListener("click", () => db.auth.signOut());
+
+/* ---------- data ---------- */
+async function loadFoods(){
+  $("listMsg").className = "msg"; $("listMsg").textContent = "Loading…";
+  const { data, error } = await db.from("foods").select("*").order("name", { ascending: true });
+  if (error) { $("listMsg").textContent = "Couldn't load: " + error.message; return; }
+  foods = data || [];
+  $("listMsg").textContent = "";
+  render();
+}
+
+function render(){
+  const q = $("search").value.trim().toLowerCase();
+  const rows = foods.filter(f =>
+    (filter === "all" || f.appliance === filter) &&
+    (!q || [f.name, f.mode, f.notes, f.quantity].some(v => (v || "").toLowerCase().includes(q))));
+  const list = $("list");
+  if (!rows.length) {
+    list.innerHTML = `<div class="empty">${foods.length ? "No matches." : "No foods yet — tap “Add food” to log your first one."}</div>`;
+    return;
+  }
+  list.innerHTML = rows.map(f => `
+    <article class="item" data-id="${esc(f.id)}" tabindex="0" role="button" aria-label="Edit ${esc(f.name)}">
+      <div class="row"><span class="name">${esc(f.name)}</span><span class="time">${fmtTime(f.cook_seconds)}</span></div>
+      <div class="meta">
+        <span class="tag ${f.appliance === "Air fryer" ? "air" : "grill"}">${esc(f.appliance)}</span>
+        ${f.mode ? `<span class="tag">${esc(f.mode)}</span>` : ""}
+        ${f.temp_c != null ? `<span class="tag">${f.temp_c}°C</span>` : ""}
+        ${f.preheat ? `<span class="tag">Preheat</span>` : ""}
+        ${f.turn_halfway ? `<span class="tag">Turn halfway</span>` : ""}
+        ${f.quantity ? `<span class="tag">${esc(f.quantity)}</span>` : ""}
+      </div>
+      ${f.notes ? `<div class="notes">${esc(f.notes)}</div>` : ""}
+    </article>`).join("");
+}
+
+/* ---------- list interactions ---------- */
+$("list").addEventListener("click", e => {
+  const el = e.target.closest(".item"); if (el) openDialog(el.dataset.id);
+});
+$("list").addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === " ") { const el = e.target.closest(".item"); if (el) { e.preventDefault(); openDialog(el.dataset.id); } }
+});
+$("search").addEventListener("input", render);
+document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () => {
+  filter = c.dataset.f;
+  document.querySelectorAll(".chip").forEach(x => x.setAttribute("aria-pressed", String(x === c)));
+  render();
+}));
+window.addEventListener("focus", () => { if (db && !$("appView").classList.contains("hidden") && !$("dlg").open) loadFoods(); });
+
+/* ---------- dialog ---------- */
+const dlg = $("dlg");
+$("addBtn").addEventListener("click", () => openDialog(null));
+$("cancelBtn").addEventListener("click", () => dlg.close());
+
+function openDialog(id){
+  editingId = id;
+  const f = id ? foods.find(x => x.id === id) : null;
+  $("dlgTitle").textContent = f ? "Edit food" : "Add food";
+  $("deleteBtn").classList.toggle("hidden", !f);
+  $("formMsg").textContent = "";
+  $("f_name").value = f?.name ?? "";
+  $("f_appliance").value = f?.appliance ?? (filter !== "all" ? filter : "Air fryer");
+  $("f_mode").value = f?.mode ?? "";
+  $("f_temp").value = f?.temp_c ?? "";
+  $("f_min").value = f ? Math.floor(f.cook_seconds / 60) : "";
+  $("f_sec").value = f ? (f.cook_seconds % 60 || "") : "";
+  $("f_qty").value = f?.quantity ?? "";
+  $("f_preheat").checked = !!f?.preheat;
+  $("f_turn").checked = !!f?.turn_halfway;
+  $("f_notes").value = f?.notes ?? "";
+  dlg.showModal();
+}
+
+$("foodForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const secs = (parseInt($("f_min").value || "0", 10) * 60) + parseInt($("f_sec").value || "0", 10);
+  if (!(secs > 0)) { $("formMsg").textContent = "Enter a cooking time."; return; }
+  const tempRaw = $("f_temp").value.trim();
+  const row = {
+    name: $("f_name").value.trim(),
+    appliance: $("f_appliance").value,
+    mode: $("f_mode").value.trim() || null,
+    temp_c: tempRaw === "" ? null : parseInt(tempRaw, 10),
+    cook_seconds: secs,
+    preheat: $("f_preheat").checked,
+    turn_halfway: $("f_turn").checked,
+    quantity: $("f_qty").value.trim() || null,
+    notes: $("f_notes").value.trim() || null,
+  };
+  $("saveBtn").disabled = true; $("formMsg").textContent = "Saving…";
+  const { error } = editingId
+    ? await db.from("foods").update(row).eq("id", editingId)
+    : await db.from("foods").insert(row);
+  $("saveBtn").disabled = false;
+  if (error) { $("formMsg").textContent = "Save failed: " + error.message; return; }
+  dlg.close();
+  loadFoods();
+});
+
+$("deleteBtn").addEventListener("click", async () => {
+  if (!editingId || !confirm("Delete this food?")) return;
+  const { error } = await db.from("foods").delete().eq("id", editingId);
+  if (error) { $("formMsg").textContent = "Delete failed: " + error.message; return; }
+  dlg.close();
+  loadFoods();
+});
+</script>
+</body>
+</html>

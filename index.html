@@ -96,6 +96,13 @@
   .ver{background:none;border:0;color:var(--muted);font-size:.65rem;font-weight:400;padding:8px 4px;cursor:pointer;vertical-align:middle}
   .verlogin{text-align:center;color:var(--muted);font-size:.75rem;margin-top:10px}
   html.hasSession #authView{display:none}
+  .fs{border:0;padding:0;margin:0;min-width:0}
+  .fsin{display:grid;gap:8px}
+  .sh{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:8px 2px 0}
+  .srow{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+  .srow .grow{flex:1;min-width:0}
+  .req{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px}
+  .req .btns{display:grid;grid-template-columns:1fr 1fr;gap:8px}
   #updateBar{position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:30;display:flex;gap:10px;
     align-items:center;justify-content:space-between;background:var(--ink);color:var(--bg);padding:8px 8px 8px 14px;border-radius:12px;
     box-shadow:0 6px 20px rgba(0,0,0,.3);font-size:.9rem}
@@ -184,9 +191,19 @@
     <div id="mealList" class="scroll"></div>
   </section>
 
+  <section class="pane hidden" id="sharePane">
+    <div class="toolbar">
+      <input type="email" id="shareEmail" name="share-email" placeholder="Email address to share with" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" autocomplete="off" aria-label="Email address to share with">
+      <button class="btn primary" id="shareBtn" type="button" style="flex:none">Share</button>
+    </div>
+    <div id="shareMsg" class="msg" role="status"></div>
+    <div id="shareList" class="scroll"></div>
+  </section>
+
   <nav class="tabs" role="tablist">
     <button role="tab" id="tabFoods" aria-selected="true">Foods</button>
     <button role="tab" id="tabMeals" aria-selected="false">Meals</button>
+    <button role="tab" id="tabShare" aria-selected="false">Sharing</button>
   </nav>
 </div>
 
@@ -194,6 +211,7 @@
 <dialog id="dlg">
   <form class="sheet" id="foodForm" method="dialog">
     <h2 id="dlgTitle">Add food</h2>
+    <fieldset id="foodFields" class="fs"><div class="fsin">
     <label>Food <input id="f_name" required maxlength="80" placeholder="e.g. Salmon fillets" autocomplete="off"></label>
     <div class="g2">
       <label>Appliance
@@ -215,11 +233,13 @@
       <label>Quantity <input id="f_qty" maxlength="60" placeholder="2 fillets, frozen…" autocomplete="off"></label>
       <label>Notes <input id="f_notes" maxlength="500" placeholder="Anything to remember" autocomplete="off"></label>
     </div>
+    </div></fieldset>
     <div class="msg" id="formMsg" role="status"></div>
     <div class="actions">
       <button type="button" class="btn danger hidden" id="deleteBtn">Delete</button>
       <div class="right">
         <button type="button" class="btn" id="cancelBtn">Cancel</button>
+        <button type="button" class="btn primary hidden" id="copyFoodBtn">Add to my library</button>
         <button type="submit" class="btn primary" id="saveBtn">Save</button>
       </div>
     </div>
@@ -242,6 +262,16 @@
         <button type="submit" class="btn primary" id="mealSaveBtn">Save</button>
       </div>
     </div>
+  </form>
+</dialog>
+
+<!-- ===== Incoming share prompt ===== -->
+<dialog id="shareDlg">
+  <form class="sheet" method="dialog">
+    <h2>Shared with you</h2>
+    <div id="shareReqs" class="mitems"></div>
+    <div class="msg" id="shareReqMsg" role="status"></div>
+    <div class="actions"><div class="right"><button type="button" class="btn" id="shareLater">Decide later</button></div></div>
   </form>
 </dialog>
 
@@ -268,7 +298,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_Ic4zpL0pBjDHnpiSaBqkKw_9cfrky2p";
 
 /* Bump this on every release. The app compares it with the live index.html
    on launch / return to foreground and reloads itself when they differ. */
-const APP_VERSION = "6";
+const APP_VERSION = "7";
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -319,7 +349,9 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 window.addEventListener("pageshow", e => { if (e.persisted) checkUpdate(false); });
 
 const configured = !SUPABASE_URL.startsWith("YOUR_") && !SUPABASE_ANON_KEY.startsWith("YOUR_");
-let db = null, foods = [], meals = [], tab = "foods", resumed = false;
+let db = null, foods = [], meals = [], shares = [], me = { id: null, email: "" }, tab = "foods", resumed = false;
+const promptedShares = new Set();
+const ownerName = uid => { const x = shares.find(v => v.owner_id === uid); return x ? x.owner_email.split("@")[0] : "shared"; };
 
 /* ---------- boot + auth ---------- */
 (async function init(){
@@ -333,7 +365,8 @@ let db = null, foods = [], meals = [], tab = "foods", resumed = false;
 
 function showFor(session){
   document.documentElement.classList.remove("hasSession");
-  if (!session) $("password").value = "";
+  if (!session) { $("password").value = ""; foods = []; meals = []; shares = []; me = { id: null, email: "" }; promptedShares.clear(); resumed = false; }
+  else me = { id: session.user.id, email: (session.user.email || "").toLowerCase() };
   $("authView").classList.toggle("hidden", !!session);
   $("appView").classList.toggle("hidden", !session);
   if (session) loadAll();
@@ -349,14 +382,16 @@ $("signOutBtn").addEventListener("click", () => { if (!run) db.auth.signOut(); }
 /* ---------- tabs ---------- */
 function setTab(t){
   tab = t;
-  $("tabFoods").setAttribute("aria-selected", String(t === "foods"));
-  $("tabMeals").setAttribute("aria-selected", String(t === "meals"));
-  $("foodsPane").classList.toggle("hidden", t !== "foods");
-  $("mealsPane").classList.toggle("hidden", t !== "meals");
+  [["foods", "tabFoods", "foodsPane"], ["meals", "tabMeals", "mealsPane"], ["share", "tabShare", "sharePane"]].forEach(([k, tb, pn]) => {
+    $(tb).setAttribute("aria-selected", String(t === k));
+    $(pn).classList.toggle("hidden", t !== k);
+  });
   $("addBtn").textContent = t === "foods" ? "+ Add food" : "+ New meal";
+  $("addBtn").classList.toggle("hidden", t === "share");
 }
 $("tabFoods").addEventListener("click", () => setTab("foods"));
 $("tabMeals").addEventListener("click", () => setTab("meals"));
+$("tabShare").addEventListener("click", () => setTab("share"));
 $("addBtn").addEventListener("click", () => tab === "foods" ? openFood(null) : openMeal(null));
 
 /* ---------- data ---------- */
@@ -367,10 +402,15 @@ async function loadAll(){
   foods = f.data || [];
   $("listMsg").textContent = "";
   const m = await db.from("meals").select("*, meal_items(id, food_id)").order("name", { ascending: true });
+  $("mealMsgTop").className = "msg";
   $("mealMsgTop").textContent = m.error ? "Couldn't load meals: " + m.error.message : "";
   meals = m.error ? [] : (m.data || []);
-  renderFoods(); renderMeals();
+  const sh = await db.from("shares").select("*").order("created_at", { ascending: true });
+  shares = sh.error ? [] : (sh.data || []);
+  if (sh.error) { $("shareMsg").className = "msg"; $("shareMsg").textContent = "Sharing isn't set up yet: run migration-5-sharing.sql in Supabase."; }
+  renderFoods(); renderMeals(); renderShares();
   if (!resumed) { resumed = true; maybeResume(); }
+  maybePromptShares();
 }
 
 /* ---------- foods list ---------- */
@@ -381,7 +421,7 @@ function renderFoods(){
   $("list").innerHTML = rows.length ? rows.map(f => `
     <article class="item ${applianceClass(f)}" data-id="${esc(f.id)}" tabindex="0" role="button" aria-label="Edit ${esc(f.name)}">
       <div class="row"><span class="name">${esc(f.name)}</span><span class="time">${fmtTime(f.cook_seconds)}</span></div>
-      <div class="sub">${esc(settingStr(f))}${f.turn_halfway ? " · Turn" : ""}${f.quantity ? " · " + esc(f.quantity) : ""}</div>
+      <div class="sub">${f.user_id !== me.id ? `<span class="pill">${esc(ownerName(f.user_id))}</span>` : ""}${esc(settingStr(f))}${f.turn_halfway ? " · Turn" : ""}${f.quantity ? " · " + esc(f.quantity) : ""}</div>
     </article>`).join("")
     : `<div class="empty">${foods.length ? "No matches." : "No foods yet — tap “+ Add food”."}</div>`;
 }
@@ -422,8 +462,13 @@ $("f_auto").addEventListener("change", syncAuto);
 function openFood(id){
   editingId = id;
   const f = id ? foods.find(x => x.id === id) : null;
-  $("dlgTitle").textContent = f ? "Edit food" : "Add food";
-  $("deleteBtn").classList.toggle("hidden", !f);
+  const mine = !f || f.user_id === me.id;
+  $("foodFields").disabled = !mine;
+  $("saveBtn").classList.toggle("hidden", !mine);
+  $("copyFoodBtn").classList.toggle("hidden", mine);
+  $("dlgTitle").textContent = !f ? "Add food" : mine ? "Edit food" : `Shared by ${ownerName(f.user_id)} (read-only)`;
+  $("deleteBtn").classList.toggle("hidden", !f || !mine);
+  $("formMsg").className = "msg";
   $("formMsg").textContent = "";
   $("f_name").value = f?.name ?? "";
   $("f_appliance").value = f?.appliance ?? ($("fFilter").value !== "all" ? $("fFilter").value : "Air fryer");
@@ -480,21 +525,30 @@ const mealTotal = items => items.length ? buildPlan(items).total : 0;   // inclu
 function renderMeals(){
   $("mealList").innerHTML = meals.length ? meals.map(m => {
     const items = mealFoods(m);
+    const mine = m.user_id === me.id;
     return `<article class="item meal" data-id="${esc(m.id)}">
       <div class="row"><span class="name">${esc(m.name)}</span><span class="time">${items.length ? fmtTime(mealTotal(items)) : ""}</span></div>
-      <div class="clamp">${items.length ? esc(items.map(f => f.name).join(", ")) : "No foods in this meal"}</div>
+      <div class="clamp">${mine ? "" : `<span class="pill">shared · ${esc(ownerName(m.user_id))}</span>`}${items.length ? esc(items.map(f => f.name).join(", ")) : "No foods in this meal"}</div>
       <div class="mact">
-        <button class="btn" data-act="edit">Edit</button>
+        ${mine ? `<button class="btn" data-act="edit">Edit</button>` : `<button class="btn" data-act="copy">Add to mine</button>`}
         <button class="btn primary" data-act="cook" ${items.length ? "" : "disabled"}>▶ Cook</button>
       </div>
     </article>`;
   }).join("") : `<div class="empty">No meals yet — tap “+ New meal” to combine foods into one timed cook.</div>`;
 }
-$("mealList").addEventListener("click", e => {
+$("mealList").addEventListener("click", async e => {
   const b = e.target.closest("[data-act]"); if (!b) return;
-  const id = b.closest(".item").dataset.id;
+  const id = b.closest(".item").dataset.id, m = meals.find(x => x.id === id);
+  if (!m) return;
   if (b.dataset.act === "edit") openMeal(id);
-  else { const m = meals.find(x => x.id === id); if (m) openCook(m); }
+  else if (b.dataset.act === "cook") openCook(m);
+  else if (b.dataset.act === "copy") {
+    b.disabled = true; b.textContent = "Copying…";
+    const err = await copyMeal(m);
+    await loadAll();
+    $("mealMsgTop").className = err ? "msg" : "msg ok";
+    $("mealMsgTop").textContent = err ? "Copy failed: " + err.message : `Copied “${m.name}” to your own meals.`;
+  }
 });
 
 /* ---------- meal dialog ---------- */
@@ -506,7 +560,7 @@ function renderDraft(){
   const chosen = draft.map(id => foods.find(f => f.id === id)).filter(Boolean);
   const sel = $("m_add");
   sel.innerHTML = `<option value="">+ Choose a food…</option>` +
-    foods.filter(f => !draft.includes(f.id)).map(f =>
+    foods.filter(f => f.user_id === me.id && !draft.includes(f.id)).map(f =>
       `<option value="${esc(f.id)}">${esc(f.name)} (${esc(f.appliance)}, ${fmtTime(f.cook_seconds)})</option>`).join("");
   $("m_items").innerHTML = chosen.map(f => `
     <div class="mrow">
@@ -521,7 +575,7 @@ $("m_items").addEventListener("click", e => {
 });
 
 function openMeal(id){
-  if (!foods.length) { alert("Add some foods first."); return; }
+  if (!foods.some(f => f.user_id === me.id)) { alert("Add some foods first."); return; }
   editingMealId = id;
   const m = id ? meals.find(x => x.id === id) : null;
   $("mealTitle").textContent = m ? "Edit meal" : "New meal";
@@ -684,6 +738,120 @@ $("soundBtn").addEventListener("click", () => {
   try { localStorage.setItem("cooklog_muted", muted ? "1" : "0"); } catch (e) {}
   if (!muted) unlockAudio();
 });
+
+/* ---------- sharing ---------- */
+const pendingIncoming = () => shares.filter(x => x.status === "pending" && x.recipient_email === me.email);
+const stripRow = f => { const { id, user_id, created_at, updated_at, ...row } = f; return row; };
+
+async function copyMeal(m){
+  const ids = [];
+  for (const f of mealFoods(m)) {
+    const r = await db.from("foods").insert(stripRow(f)).select().single();
+    if (r.error) return r.error;
+    ids.push(r.data.id);
+  }
+  const mr = await db.from("meals").insert({ name: m.name }).select().single();
+  if (mr.error) return mr.error;
+  return (await db.from("meal_items").insert(ids.map(food_id => ({ meal_id: mr.data.id, food_id })))).error;
+}
+
+$("copyFoodBtn").addEventListener("click", async () => {
+  const f = foods.find(x => x.id === editingId); if (!f) return;
+  $("copyFoodBtn").disabled = true; $("formMsg").textContent = "Copying…";
+  const r = await db.from("foods").insert(stripRow(f)).select().single();
+  $("copyFoodBtn").disabled = false;
+  if (r.error) { $("formMsg").textContent = "Copy failed: " + r.error.message; return; }
+  dlg.close(); await loadAll();
+});
+
+function renderShares(){
+  const inc = shares.filter(x => x.recipient_email === me.email);
+  const out = shares.filter(x => x.owner_id === me.id);
+  const pend = inc.filter(x => x.status === "pending"), acc = inc.filter(x => x.status === "accepted");
+  const row = (title, sub, btns) => `<div class="srow"><div class="grow"><div class="name">${title}</div><div class="sub">${sub}</div></div>${btns}</div>`;
+  let h = "";
+  if (pend.length) h += `<div class="sh">Waiting for your reply</div>` + pend.map(x => row(esc(x.owner_email), "wants to share their foods and meals",
+    `<button class="btn small" data-resp="decline" data-id="${esc(x.id)}">Decline</button><button class="btn primary small" data-resp="accept" data-id="${esc(x.id)}">Accept</button>`)).join("");
+  h += `<div class="sh">You're sharing with</div>` + (out.length
+    ? out.map(x => row(esc(x.recipient_email), x.status === "accepted" ? "Accepted · can view your foods and meals" : "Waiting for them to accept",
+        `<button class="btn small" data-del="${esc(x.id)}">Stop</button>`)).join("")
+    : `<div class="empty">Nobody yet. Enter an email address above.</div>`);
+  if (acc.length) h += `<div class="sh">Shared with you</div>` + acc.map(x => row(esc(x.owner_email), "Their foods and meals appear in your lists",
+    `<button class="btn small" data-del="${esc(x.id)}">Remove</button>`)).join("");
+  $("shareList").innerHTML = h;
+  $("tabShare").textContent = pend.length ? `Sharing (${pend.length})` : "Sharing";
+}
+
+async function shareNow(){
+  const email = $("shareEmail").value.trim().toLowerCase(), msg = $("shareMsg");
+  msg.className = "msg";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { msg.textContent = "Enter a valid email address."; return; }
+  if (email === me.email) { msg.textContent = "That's your own email address."; return; }
+  $("shareBtn").disabled = true; msg.textContent = "Sending…";
+  const { error } = await db.from("shares").insert({ recipient_email: email });
+  $("shareBtn").disabled = false;
+  if (error) { msg.textContent = error.code === "23505" ? "Already shared with that address." : "Couldn't share: " + error.message; return; }
+  $("shareEmail").value = "";
+  await loadAll();
+  msg.className = "msg ok";
+  msg.textContent = `Invitation sent. ${email} will be asked to accept the next time they sign in.`;
+}
+$("shareBtn").addEventListener("click", shareNow);
+$("shareEmail").addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); shareNow(); } });
+
+async function respondShare(id, accept){
+  const { error } = await db.rpc("respond_to_share", { p_share: id, p_accept: accept });
+  if (error) return error;
+  await loadAll();
+  return null;
+}
+
+$("shareList").addEventListener("click", async e => {
+  const r = e.target.closest("[data-resp]"), d = e.target.closest("[data-del]");
+  if (r) {
+    r.disabled = true;
+    const err = await respondShare(r.dataset.id, r.dataset.resp === "accept");
+    if (err) { $("shareMsg").className = "msg"; $("shareMsg").textContent = err.message; r.disabled = false; }
+    return;
+  }
+  if (d) {
+    const x = shares.find(v => v.id === d.dataset.del); if (!x) return;
+    const mineOut = x.owner_id === me.id;
+    if (!confirm(mineOut ? `Stop sharing with ${x.recipient_email}? They will lose access to your foods and meals.`
+                         : `Remove ${x.owner_email}'s shared foods and meals from your account? Copies you made are kept.`)) return;
+    const { error } = await db.from("shares").delete().eq("id", x.id);
+    $("shareMsg").className = "msg"; $("shareMsg").textContent = error ? error.message : "";
+    await loadAll();
+  }
+});
+
+function renderShareReqs(){
+  $("shareReqs").innerHTML = pendingIncoming().map(x => `<div class="req">
+      <div><strong>${esc(x.owner_email)}</strong> wants to share their foods and meals with you.</div>
+      <div class="btns">
+        <button type="button" class="btn" data-resp="decline" data-id="${esc(x.id)}">Decline</button>
+        <button type="button" class="btn primary" data-resp="accept" data-id="${esc(x.id)}">Accept</button>
+      </div>
+    </div>`).join("");
+}
+function maybePromptShares(){
+  const fresh = pendingIncoming().filter(x => !promptedShares.has(x.id));
+  if (!fresh.length || run || dlg.open || mealDlg.open || $("shareDlg").open) return;
+  fresh.forEach(x => promptedShares.add(x.id));
+  $("shareReqMsg").textContent = "";
+  renderShareReqs();
+  $("shareDlg").showModal();
+  if (document.activeElement) document.activeElement.blur();
+}
+$("shareReqs").addEventListener("click", async e => {
+  const b = e.target.closest("[data-resp]"); if (!b) return;
+  b.disabled = true;
+  const err = await respondShare(b.dataset.id, b.dataset.resp === "accept");
+  if (err) { $("shareReqMsg").textContent = err.message; b.disabled = false; return; }
+  renderShareReqs();
+  if (!pendingIncoming().length) $("shareDlg").close();
+});
+$("shareLater").addEventListener("click", () => $("shareDlg").close());
 
 /* ---------- cook screen ---------- */
 let run = null;

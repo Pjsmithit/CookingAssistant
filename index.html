@@ -12,12 +12,12 @@
 <style>
   :root{
     --bg:#faf7f2; --card:#ffffff; --ink:#1c1917; --muted:#78716c; --line:#e7e1d8;
-    --accent:#d9480f; --accent-ink:#fff; --air:#0b7285; --grill:#c2410c; --danger:#b91c1c; --ok:#2f9e44;
+    --accent:#d9480f; --accent-ink:#fff; --air:#0b7285; --grill:#c2410c; --danger:#b91c1c; --ok:#2f9e44; --hob:#7048e8; --oven:#5c940d;
     --radius:12px;
   }
   @media (prefers-color-scheme: dark){
     :root{ --bg:#1c1917; --card:#292524; --ink:#f5f5f4; --muted:#a8a29e; --line:#3f3a36;
-      --accent:#fb923c; --accent-ink:#1c1917; --air:#22b8cf; --grill:#fb923c; --danger:#f87171; --ok:#51cf66; }
+      --accent:#fb923c; --accent-ink:#1c1917; --air:#22b8cf; --grill:#fb923c; --danger:#f87171; --ok:#51cf66; --hob:#9775fa; --oven:#94d82d; }
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
@@ -46,7 +46,8 @@
   .pane{flex:1;min-height:0;display:flex;flex-direction:column;padding:0 14px}
   .toolbar{display:flex;gap:8px;margin:2px 0 8px}
   .toolbar select{width:112px;flex:none}
-  .scroll{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:grid;gap:8px;align-content:start;padding-bottom:8px}
+  /* minmax(0,1fr): without it a long nowrap line widens the grid column and pushes buttons off-screen */
+  .scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;align-content:start;padding-bottom:8px}
   .tabs{display:flex;border-top:1px solid var(--line);background:var(--card);padding-bottom:env(safe-area-inset-bottom)}
   .tabs button{flex:1;border:0;background:none;padding:11px 0;font-size:.95rem;color:var(--muted);cursor:pointer}
   .tabs button[aria-selected=true]{color:var(--accent);font-weight:700}
@@ -55,13 +56,16 @@
   .item{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--line);border-radius:var(--radius);
     padding:8px 12px;cursor:pointer}
   .item.air{border-left-color:var(--air)} .item.grill{border-left-color:var(--grill)}
+  .item.hob{border-left-color:var(--hob)} .item.oven{border-left-color:var(--oven)}
   .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
   .name{font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .time{font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
   .sub{color:var(--muted);font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .empty{text-align:center;color:var(--muted);padding:30px 10px}
-  .meal{display:flex;align-items:center;gap:8px;cursor:default;border-left-color:var(--accent)}
-  .meal .grow{flex:1;min-width:0}
+  .meal{display:grid;gap:3px;cursor:default;border-left-color:var(--accent)}
+  .clamp{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;color:var(--muted);font-size:.82rem}
+  .mact{display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-top:6px}
+  .mact .btn{min-height:44px}
 
   /* dialogs */
   dialog{border:none;border-radius:18px;padding:0;width:min(520px,calc(100vw - 16px));background:var(--bg);color:var(--ink);max-height:calc(100dvh - 16px);overflow:auto;margin:8px auto auto}
@@ -77,7 +81,7 @@
   .tog input:focus-visible + span{outline:2px solid var(--accent)}
   .actions{display:flex;gap:8px;align-items:center}
   .actions .right{margin-left:auto;display:flex;gap:8px}
-  .mitems{display:grid;gap:6px;max-height:34dvh;overflow-y:auto}
+  .mitems{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;max-height:34dvh;overflow-y:auto}
   .mrow{display:flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 6px 6px 10px}
   .mrow .grow{flex:1;min-width:0}
   .mtotal{font-size:.85rem;color:var(--muted)}
@@ -106,7 +110,7 @@
   .pcap{font-size:.85rem;opacity:.8}
   .cnote{font-size:.82rem;color:var(--muted);min-height:0;padding:6px 2px 0}
   .cnote b{color:var(--danger);font-weight:600}
-  .crows{flex:1;min-height:0;overflow-y:auto;display:grid;gap:6px;align-content:start;padding:8px 0}
+  .crows{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:grid;grid-template-columns:minmax(0,1fr);gap:6px;align-content:start;padding:8px 0}
   .crow{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:7px 10px}
   .crow.cook{border-color:var(--accent)} .crow.done{opacity:.6}
   .crow .st{font-size:.85rem;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
@@ -114,6 +118,12 @@
   .bar{height:4px;border-radius:4px;background:var(--line);margin-top:6px;overflow:hidden}
   .bar i{display:block;height:100%;background:var(--accent);width:0}
   .crow.done .bar i{background:var(--ok)}
+  .crow.tog{border-left:4px solid var(--accent)}
+  .pill{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:1px 8px;font-size:.72rem;font-weight:700;margin-right:6px}
+  .panel.soon{border:2px solid var(--accent);animation:pulse 1s ease-in-out 4}
+  .plines{display:grid;gap:2px;margin:2px 0}
+  .pline{font-size:1.3rem;font-weight:700;line-height:1.2}
+  .plines.many .pline{font-size:1.05rem}
 </style>
 </head>
 <body>
@@ -154,6 +164,8 @@
         <option value="all">All</option>
         <option>Air fryer</option>
         <option>Grill</option>
+        <option>Hob</option>
+        <option>Oven</option>
       </select>
     </div>
     <div id="listMsg" class="msg" role="status"></div>
@@ -178,12 +190,12 @@
     <label>Food <input id="f_name" required maxlength="80" placeholder="e.g. Salmon fillets" autocomplete="off"></label>
     <div class="g2">
       <label>Appliance
-        <select id="f_appliance"><option>Air fryer</option><option>Grill</option></select>
+        <select id="f_appliance"><option>Air fryer</option><option>Grill</option><option>Hob</option><option>Oven</option></select>
       </label>
       <label>Mode / setting <input id="f_mode" maxlength="40" placeholder="Air Fry, Roast…" autocomplete="off"></label>
     </div>
-    <div class="g3">
-      <label>Temp (°C) <input id="f_temp" type="number" inputmode="numeric" min="0" max="300" placeholder="180"></label>
+    <div class="g3" id="timeGrid">
+      <label id="tempWrap">Temp (°C) <input id="f_temp" type="number" inputmode="numeric" min="0" max="300" placeholder="180"></label>
       <label>Minutes <input id="f_min" type="number" inputmode="numeric" min="0" max="999" placeholder="12" required></label>
       <label>Seconds <input id="f_sec" type="number" inputmode="numeric" min="0" max="59" placeholder="0"></label>
     </div>
@@ -249,7 +261,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_Ic4zpL0pBjDHnpiSaBqkKw_9cfrky2p";
 
 /* Bump this on every release. The app compares it with the live index.html
    on launch / return to foreground and reloads itself when they differ. */
-const APP_VERSION = "4";
+const APP_VERSION = "5";
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -263,7 +275,7 @@ const mmss = secs => {
 };
 const tempStr = f => f.temp_auto ? "Auto temp" : (f.temp_c != null ? `${f.temp_c}°C` : "");
 const settingStr = f => [f.appliance, f.mode, tempStr(f)].filter(Boolean).join(" · ");
-const applianceClass = f => f.appliance === "Air fryer" ? "air" : "grill";
+const applianceClass = f => ({ "Air fryer": "air", "Grill": "grill", "Hob": "hob", "Oven": "oven" })[f.appliance] || "air";
 
 /* ---------- version + self-update (keeps Home Screen shortcuts current) ---------- */
 $("verBtn").textContent = "v" + APP_VERSION;
@@ -379,10 +391,15 @@ const dlg = $("dlg");
 let editingId = null;
 $("cancelBtn").addEventListener("click", () => dlg.close());
 
+const MODE_HINT = { "Air fryer": "Air Fry, Roast…", "Grill": "Max Grill, Low…", "Hob": "Medium heat, 6…", "Oven": "Fan, shelf 2…" };
 function syncAuto(){
-  const grill = $("f_appliance").value === "Grill";
+  const app = $("f_appliance").value, grill = app === "Grill", hob = app === "Hob";
   $("autoWrap").classList.toggle("hidden", !grill);
   if (!grill) $("f_auto").checked = false;
+  $("tempWrap").classList.toggle("hidden", hob);   // hobs use a heat setting, not °C
+  $("timeGrid").className = hob ? "g2" : "g3";
+  if (hob) $("f_temp").value = "";
+  $("f_mode").placeholder = MODE_HINT[app] || "";
   const auto = $("f_auto").checked;
   $("f_temp").disabled = auto;
   if (auto) $("f_temp").value = "";
@@ -452,12 +469,12 @@ function renderMeals(){
   $("mealList").innerHTML = meals.length ? meals.map(m => {
     const items = mealFoods(m);
     return `<article class="item meal" data-id="${esc(m.id)}">
-      <div class="grow">
-        <div class="name">${esc(m.name)}</div>
-        <div class="sub">${items.length} item${items.length === 1 ? "" : "s"}${items.length ? " · " + fmtTime(mealTotal(items)) + " · " + esc(items.map(f => f.name).join(", ")) : ""}</div>
+      <div class="row"><span class="name">${esc(m.name)}</span><span class="time">${items.length ? fmtTime(mealTotal(items)) : ""}</span></div>
+      <div class="clamp">${items.length ? esc(items.map(f => f.name).join(", ")) : "No foods in this meal"}</div>
+      <div class="mact">
+        <button class="btn" data-act="edit">Edit</button>
+        <button class="btn primary" data-act="cook" ${items.length ? "" : "disabled"}>▶ Cook</button>
       </div>
-      <button class="btn small" data-act="edit">Edit</button>
-      <button class="btn primary small" data-act="cook" ${items.length ? "" : "disabled"}>▶ Cook</button>
     </article>`;
   }).join("") : `<div class="empty">No meals yet — tap “+ New meal” to combine foods into one timed cook.</div>`;
 }
@@ -536,27 +553,38 @@ $("mealDeleteBtn").addEventListener("click", async () => {
    staggered so everything finishes together.
    =========================================================== */
 /*PLAN_START*/
+const WHERE = { "Air fryer": "in the air fryer", "Grill": "under the grill", "Hob": "on the hob", "Oven": "in the oven" };
 function buildPlan(items){
   const sorted = [...items].sort((a, b) => b.cook_seconds - a.cook_seconds);
   const total = sorted[0].cook_seconds;
   const plan = sorted.map(f => ({ food: f, start: total - f.cook_seconds, end: total }));
-  const order = { warn: 0, start: 1, turn: 2, done: 3 };
-  const events = [];
+  plan.forEach(p => { p.together = plan.filter(q => q !== p && q.start === p.start).map(q => q.food.name); });
+  const order = { heads: 0, warn: 1, start: 2, turn: 3, done: 4 };
+  const where = f => WHERE[f.appliance] || "";
+  const raw = [];
   for (const p of plan) {
     const f = p.food;
-    if (p.start >= 15) events.push({ t: p.start - 10, type: "warn", label: `${f.name} in 10 seconds`, say: "" });
-    events.push({ t: p.start, type: "start", label: `Put in ${f.name}`, say: `Put the ${f.name} in the ${f.appliance.toLowerCase()}` });
-    if (f.turn_halfway) events.push({ t: p.start + Math.round(f.cook_seconds / 2), type: "turn", label: `Turn ${f.name}`, say: `Turn the ${f.name}` });
+    if (p.start >= 30) raw.push({ t: p.start - 30, type: "heads", foods: [f], line: `${f.name} in 30 seconds`, say: `${f.name} goes ${where(f)} in 30 seconds` });
+    if (p.start >= 15) raw.push({ t: p.start - 10, type: "warn", foods: [f], line: `${f.name} in 10 seconds`, say: "" });
+    raw.push({ t: p.start, type: "start", foods: [f], line: `${f.name} → ${f.appliance}`, say: `Put the ${f.name} ${where(f)}` });
+    if (f.turn_halfway) raw.push({ t: p.start + Math.round(f.cook_seconds / 2), type: "turn", foods: [f], line: `Turn ${f.name}`, say: `Turn the ${f.name}` });
   }
-  events.push({ t: total, type: "done", label: "Everything is ready", say: "Everything is ready" });
-  events.sort((a, b) => a.t - b.t || order[a.type] - order[b.type]);
+  raw.push({ t: total, type: "done", foods: [], line: "Everything is ready", say: "Everything is ready" });
+  // merge same-type events at the same moment so simultaneous items are announced and shown together
+  const merged = new Map();
+  for (const e of raw) {
+    const k = e.type + "@" + e.t, m = merged.get(k);
+    if (m) { m.foods.push(...e.foods); m.lines.push(e.line); m.say = [m.say, e.say].filter(Boolean).join(", and "); }
+    else merged.set(k, { t: e.t, type: e.type, foods: [...e.foods], lines: [e.line], say: e.say });
+  }
+  const events = [...merged.values()].sort((a, b) => a.t - b.t || order[a.type] - order[b.type]);
   return { plan, total, events };
 }
 function clashes(items){
   const out = [], by = {};
   items.forEach(f => { (by[f.appliance] = by[f.appliance] || []).push(f); });
   for (const [app, list] of Object.entries(by)) {
-    if (list.length < 2) continue;
+    if (app === "Hob" || list.length < 2) continue;   // several pans can run at different heats
     const t = f => f.temp_auto ? "auto" : (f.temp_c != null ? f.temp_c + "°C" : "?");
     if (new Set(list.map(t)).size > 1) out.push(`${app}: ${list.map(f => `${f.name} ${t(f)}`).join(", ")}`);
   }
@@ -630,14 +658,17 @@ function openCook(meal, resumeT0){
 function paintRows(el){
   $("cookRows").innerHTML = run.plan.map(p => {
     const f = p.food, cook = f.cook_seconds;
+    const waiting = el === null || el < p.start, group = p.together.length > 0 && waiting;
     let cls = "wait", st, pct = 0;
     if (el === null) st = p.start === 0 ? "Put in now" : `Put in at +${mmss(p.start)}`;
     else if (el < p.start) st = `in ${mmss(p.start - el)}`;
     else if (el < p.end) { cls = "cook"; st = `${mmss(p.end - el)} left`; pct = Math.min(100, (el - p.start) / cook * 100); }
     else { cls = "done"; st = "✓ Done"; pct = 100; }
+    if (group) cls += " tog";
+    const pill = group ? `<span class="pill">with ${esc(p.together.join(" + "))}</span>` : "";
     return `<div class="crow ${cls}">
       <div class="row"><span class="name">${esc(f.name)}</span><span class="st">${st}</span></div>
-      <div class="sub">${esc(settingStr(f))}${f.turn_halfway ? " · Turn halfway" : ""}${f.quantity ? " · " + esc(f.quantity) : ""}</div>
+      <div class="sub">${pill}${esc(settingStr(f))}${f.turn_halfway ? " · Turn halfway" : ""}${f.quantity ? " · " + esc(f.quantity) : ""}</div>
       <div class="bar"><i style="width:${pct}%"></i></div>
     </div>`;
   }).join("");
@@ -646,7 +677,9 @@ function paintRows(el){
 function paintPre(){
   const pre = [...new Set(run.items.filter(f => f.preheat).map(f => f.appliance))];
   const cl = clashes(run.items);
+  const groups = run.events.filter(e => e.type === "start" && e.foods.length > 1);
   $("cookNote").innerHTML =
+    (groups.length ? `<strong>⚡ Together:</strong> ${esc(groups.map(g => g.foods.map(f => f.name).join(" + ") + (g.t === 0 ? " at the start" : " at +" + mmss(g.t))).join("; "))}. ` : "") +
     (pre.length ? `Preheat first: <strong>${esc(pre.join(", "))}</strong>. ` : "") +
     (cl.length ? `<b>⚠ Different temps in the same appliance — ${esc(cl.join("; "))}</b>` : "");
   const panel = $("cookPanel");
@@ -676,14 +709,23 @@ function startRun(resumeT0){
   tick();
 }
 
+const PRIORITY = { done: 4, start: 3, turn: 2, heads: 1 };
 function fire(due){
   const loud = due.filter(e => e.type !== "warn");
-  if (!loud.length) { beep(1, 520, 0.12); return; }
-  const done = loud.some(e => e.type === "done"), turn = loud.every(e => e.type === "turn");
-  const dur = done ? beep(4, 1046) : turn ? beep(2, 1175) : beep(3, 880);
+  if (!loud.length) { beep(1, 520, 0.12); return; }          // quiet 10-second tick
+  const top = loud.reduce((a, e) => PRIORITY[e.type] > PRIORITY[a.type] ? e : a, loud[0]).type;
+  const dur = top === "done" ? beep(4, 1046) : top === "start" ? beep(3, 880) : top === "turn" ? beep(2, 1175) : beep(2, 660);
   speak(loud.map(e => e.say).join(", and "), dur);
   try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
-  run.lastMsg = { text: loud.map(e => e.label).join(" + "), at: (Date.now() - run.t0) / 1000 };
+  const urgent = loud.filter(e => e.type !== "heads");
+  const shown = urgent.length ? urgent : loud;
+  const starts = urgent.filter(e => e.type === "start");
+  const nStart = starts.reduce((n, e) => n + e.foods.length, 0);
+  const tag = !urgent.length ? "GET READY"
+    : starts.length ? (nStart > 1 ? `PUT IN ${nStart} ITEMS NOW` : "PUT IN NOW")
+    : urgent.some(e => e.type === "turn") ? "TURN NOW" : "NOW";
+  run.lastMsg = { lines: shown.flatMap(e => e.lines), at: (Date.now() - run.t0) / 1000, tag,
+                  cls: urgent.length ? "now" : "soon", hold: urgent.length ? 10 : 8 };
   run.lastPaint = -1;
 }
 
@@ -696,20 +738,22 @@ function tick(){
   paintRun(el);
 }
 
+const linesHTML = lines => `<div class="plines${lines.length > 2 ? " many" : ""}">${lines.map(l => `<div class="pline">${esc(l)}</div>`).join("")}</div>`;
+
 function paintRun(el){
   const s = Math.floor(el);
   if (s === run.lastPaint) return;
   run.lastPaint = s;
-  const nxt = run.events.slice(run.next).find(e => e.type !== "warn");
-  const now = run.lastMsg && el - run.lastMsg.at < 10;
+  const nxt = run.events.slice(run.next).find(e => e.type !== "warn" && e.type !== "heads");
+  const lm = run.lastMsg, now = lm && el - lm.at < lm.hold;
   const panel = $("cookPanel");
-  panel.className = "panel" + (now ? " now" : "");
-  const tag = now ? "NOW" : "NEXT";
-  const msg = now ? run.lastMsg.text : (nxt ? nxt.label : "");
+  panel.className = "panel" + (now ? " " + lm.cls : "");
+  const tag = now ? lm.tag : (nxt && nxt.type === "start" && nxt.foods.length > 1 ? `NEXT · ${nxt.foods.length} ITEMS TOGETHER` : "NEXT");
+  const lines = now ? lm.lines : (nxt ? nxt.lines : []);
   const sound = panel.dataset.needsound === "1" ? `<div class="pcap">🔇 Tap anywhere to turn sound back on</div>` : "";
-  panel.innerHTML = `<div class="ptag">${tag}</div><div class="pmsg">${esc(msg)}</div>
+  panel.innerHTML = `<div class="ptag">${esc(tag)}</div>${linesHTML(lines)}
     <div class="pcount">${nxt ? mmss(nxt.t - el) : ""}</div>
-    <div class="pcap">${nxt ? (nxt.type === "done" ? "until everything is ready" : "until " + esc(nxt.label.toLowerCase())) : ""} · ready in ${mmss(run.total - el)}</div>${sound}`;
+    <div class="pcap">${nxt && nxt.type === "done" ? "until everything is ready" : "until the next step"} · ready in ${mmss(run.total - el)}</div>${sound}`;
   paintRows(el);
 }
 

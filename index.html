@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-title" content="Cook Log">
 <meta name="theme-color" content="#1c1917">
 <title>Cook Log</title>
+<script>try{if(Object.keys(localStorage).some(function(k){return /^sb-.*-auth-token$/.test(k)}))document.documentElement.classList.add("hasSession")}catch(e){}</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   :root{
@@ -79,6 +80,8 @@
   .tog span{display:inline-block;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 12px;font-size:.88rem;cursor:pointer}
   .tog input:checked + span{background:var(--ink);color:var(--bg);border-color:var(--ink)}
   .tog input:focus-visible + span{outline:2px solid var(--accent)}
+  .togrow{align-items:end}
+  .togrow .tog span{display:block;text-align:center;padding:9px 4px;font-size:.8rem}
   .actions{display:flex;gap:8px;align-items:center}
   .actions .right{margin-left:auto;display:flex;gap:8px}
   .mitems{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;max-height:34dvh;overflow-y:auto}
@@ -92,6 +95,7 @@
   .banner{background:var(--card);border:1px solid var(--danger);color:var(--danger);border-radius:var(--radius);padding:14px;margin:20px 16px}
   .ver{background:none;border:0;color:var(--muted);font-size:.65rem;font-weight:400;padding:8px 4px;cursor:pointer;vertical-align:middle}
   .verlogin{text-align:center;color:var(--muted);font-size:.75rem;margin-top:10px}
+  html.hasSession #authView{display:none}
   #updateBar{position:fixed;left:8px;right:8px;top:calc(8px + env(safe-area-inset-top));z-index:30;display:flex;gap:10px;
     align-items:center;justify-content:space-between;background:var(--ink);color:var(--bg);padding:8px 8px 8px 14px;border-radius:12px;
     box-shadow:0 6px 20px rgba(0,0,0,.3);font-size:.9rem}
@@ -119,6 +123,7 @@
   .bar i{display:block;height:100%;background:var(--accent);width:0}
   .crow.done .bar i{background:var(--ok)}
   .crow.tog{border-left:4px solid var(--accent)}
+  .crow.prep{border-color:var(--grill)} .crow.prep .st{color:var(--grill);font-weight:700} .crow.prep .bar i{background:var(--grill)}
   .pill{display:inline-block;background:var(--accent);color:var(--accent-ink);border-radius:999px;padding:1px 8px;font-size:.72rem;font-weight:700;margin-right:6px}
   .panel.soon{border:2px solid var(--accent);animation:pulse 1s ease-in-out 4}
   .plines{display:grid;gap:2px;margin:2px 0}
@@ -129,15 +134,17 @@
 <body>
 
 <!-- ===== Login ===== -->
-<div id="authView" class="auth hidden">
+<div id="authView" class="auth">
   <h1 style="margin:0 0 12px">🍳 Cook Log</h1>
-  <form id="authForm" method="post" action="#" autocomplete="on">
+  <form id="authForm" method="post" action="about:blank" target="authframe" autocomplete="on">
     <label>Email <input id="email" name="username" type="email" autocomplete="username" inputmode="email" autocapitalize="none" autocorrect="off" spellcheck="false" required></label>
     <label>Password <input id="password" name="password" type="password" autocomplete="current-password" minlength="8" required></label>
     <div class="msg" id="authMsg" role="status"></div>
     <button class="btn primary" type="submit">Sign in</button>
   </form>
   <div class="verlogin" id="verLogin"></div>
+  <!-- The form posts to this hidden frame so iOS sees a genuine form submission and offers to save the password. Sign-in itself happens in JS. -->
+  <iframe name="authframe" title="" tabindex="-1" aria-hidden="true" style="position:absolute;width:0;height:0;border:0"></iframe>
 </div>
 
 <div id="configBanner" class="banner hidden">
@@ -199,8 +206,8 @@
       <label>Minutes <input id="f_min" type="number" inputmode="numeric" min="0" max="999" placeholder="12" required></label>
       <label>Seconds <input id="f_sec" type="number" inputmode="numeric" min="0" max="59" placeholder="0"></label>
     </div>
-    <div class="togs">
-      <label class="tog"><input type="checkbox" id="f_preheat"><span>Preheat</span></label>
+    <div class="g3 togrow">
+      <label><span id="prepText">Preheat (min)</span><input id="f_prep" type="number" inputmode="decimal" min="0" max="60" step="0.5" placeholder="0"></label>
       <label class="tog"><input type="checkbox" id="f_turn"><span>Turn halfway</span></label>
       <label class="tog hidden" id="autoWrap"><input type="checkbox" id="f_auto"><span>Auto temp</span></label>
     </div>
@@ -261,7 +268,7 @@ const SUPABASE_ANON_KEY = "sb_publishable_Ic4zpL0pBjDHnpiSaBqkKw_9cfrky2p";
 
 /* Bump this on every release. The app compares it with the live index.html
    on launch / return to foreground and reloads itself when they differ. */
-const APP_VERSION = "5";
+const APP_VERSION = "6";
 
 /* ---------- helpers ---------- */
 const $ = id => document.getElementById(id);
@@ -274,7 +281,8 @@ const mmss = secs => {
   return h ? `${h}:${p(m)}:${p(s)}` : `${p(m)}:${p(s)}`;
 };
 const tempStr = f => f.temp_auto ? "Auto temp" : (f.temp_c != null ? `${f.temp_c}°C` : "");
-const settingStr = f => [f.appliance, f.mode, tempStr(f)].filter(Boolean).join(" · ");
+const prepStr = f => f.prep_seconds ? `${f.appliance === "Hob" ? "Boil wait" : "Preheat"} ${fmtTime(f.prep_seconds)}` : "";
+const settingStr = f => [f.appliance, f.mode, tempStr(f), prepStr(f)].filter(Boolean).join(" · ");
 const applianceClass = f => ({ "Air fryer": "air", "Grill": "grill", "Hob": "hob", "Oven": "oven" })[f.appliance] || "air";
 
 /* ---------- version + self-update (keeps Home Screen shortcuts current) ---------- */
@@ -316,7 +324,7 @@ let db = null, foods = [], meals = [], tab = "foods", resumed = false;
 /* ---------- boot + auth ---------- */
 (async function init(){
   checkUpdate(false);
-  if (!configured) { $("configBanner").classList.remove("hidden"); return; }
+  if (!configured) { $("authView").classList.add("hidden"); $("configBanner").classList.remove("hidden"); return; }
   db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   db.auth.onAuthStateChange((_e, session) => showFor(session));
   const { data } = await db.auth.getSession();
@@ -324,13 +332,14 @@ let db = null, foods = [], meals = [], tab = "foods", resumed = false;
 })();
 
 function showFor(session){
+  document.documentElement.classList.remove("hasSession");
   if (!session) $("password").value = "";
   $("authView").classList.toggle("hidden", !!session);
   $("appView").classList.toggle("hidden", !session);
   if (session) loadAll();
 }
-$("authForm").addEventListener("submit", async e => {
-  e.preventDefault();
+$("authForm").addEventListener("submit", async () => {
+  // No preventDefault: the form posts to a hidden iframe, which is what lets iOS offer to save the password.
   $("authMsg").textContent = "Signing in…";
   const { error } = await db.auth.signInWithPassword({ email: $("email").value.trim(), password: $("password").value });
   $("authMsg").textContent = error ? error.message : "";
@@ -372,7 +381,7 @@ function renderFoods(){
   $("list").innerHTML = rows.length ? rows.map(f => `
     <article class="item ${applianceClass(f)}" data-id="${esc(f.id)}" tabindex="0" role="button" aria-label="Edit ${esc(f.name)}">
       <div class="row"><span class="name">${esc(f.name)}</span><span class="time">${fmtTime(f.cook_seconds)}</span></div>
-      <div class="sub">${esc(settingStr(f))}${f.preheat ? " · Preheat" : ""}${f.turn_halfway ? " · Turn" : ""}${f.quantity ? " · " + esc(f.quantity) : ""}</div>
+      <div class="sub">${esc(settingStr(f))}${f.turn_halfway ? " · Turn" : ""}${f.quantity ? " · " + esc(f.quantity) : ""}</div>
     </article>`).join("")
     : `<div class="empty">${foods.length ? "No matches." : "No foods yet — tap “+ Add food”."}</div>`;
 }
@@ -400,6 +409,8 @@ function syncAuto(){
   $("timeGrid").className = hob ? "g2" : "g3";
   if (hob) $("f_temp").value = "";
   $("f_mode").placeholder = MODE_HINT[app] || "";
+  $("prepText").textContent = hob ? "Boil wait (min)" : "Preheat (min)";
+  $("f_prep").placeholder = hob ? "2" : "5";
   const auto = $("f_auto").checked;
   $("f_temp").disabled = auto;
   if (auto) $("f_temp").value = "";
@@ -422,7 +433,7 @@ function openFood(id){
   $("f_sec").value = f ? (f.cook_seconds % 60 || "") : "";
   $("f_qty").value = f?.quantity ?? "";
   $("f_notes").value = f?.notes ?? "";
-  $("f_preheat").checked = !!f?.preheat;
+  $("f_prep").value = f?.prep_seconds ? f.prep_seconds / 60 : "";
   $("f_turn").checked = !!f?.turn_halfway;
   $("f_auto").checked = !!f?.temp_auto;
   syncAuto();
@@ -442,7 +453,8 @@ $("foodForm").addEventListener("submit", async e => {
     temp_auto: auto,
     temp_c: auto || tempRaw === "" ? null : parseInt(tempRaw, 10),
     cook_seconds: secs,
-    preheat: $("f_preheat").checked,
+    prep_seconds: Math.round((parseFloat($("f_prep").value) || 0) * 60),
+    preheat: (parseFloat($("f_prep").value) || 0) > 0,
     turn_halfway: $("f_turn").checked,
     quantity: $("f_qty").value.trim() || null,
     notes: $("f_notes").value.trim() || null,
@@ -463,7 +475,7 @@ $("deleteBtn").addEventListener("click", async () => {
 
 /* ---------- meals list ---------- */
 const mealFoods = m => (m.meal_items || []).map(mi => foods.find(f => f.id === mi.food_id)).filter(Boolean);
-const mealTotal = items => items.reduce((mx, f) => Math.max(mx, f.cook_seconds), 0);
+const mealTotal = items => items.length ? buildPlan(items).total : 0;   // includes any heat-up wait
 
 function renderMeals(){
   $("mealList").innerHTML = meals.length ? meals.map(m => {
@@ -556,26 +568,61 @@ $("mealDeleteBtn").addEventListener("click", async () => {
 const WHERE = { "Air fryer": "in the air fryer", "Grill": "under the grill", "Hob": "on the hob", "Oven": "in the oven" };
 function buildPlan(items){
   const sorted = [...items].sort((a, b) => b.cook_seconds - a.cook_seconds);
-  const total = sorted[0].cook_seconds;
-  const plan = sorted.map(f => ({ food: f, start: total - f.cook_seconds, end: total }));
+  const cook = sorted[0].cook_seconds;
+  // First pass is relative to "the longest item goes in at 0"; any heat-up that has to begin earlier shifts everything later.
+  const plan = sorted.map(f => {
+    const start = cook - f.cook_seconds, prep = f.prep_seconds || 0;
+    return { food: f, start, prep, prepAt: prep > 0 ? start - prep : null };
+  });
+  // Heat-up actions: one per hob item (separate pans), one per other appliance (a hot grill/oven serves every item).
+  const heat = [], shared = {};
+  for (const p of plan) {
+    if (!p.prep) continue;
+    const f = p.food, app = f.appliance;
+    if (app === "Hob") {
+      heat.push({ t: p.prepAt, foods: [f], what: `hob for ${f.name}`, line: `Hob: start heating for ${f.name}`,
+        say: `Start heating the hob for the ${f.name}`, hLine: `Hob on for ${f.name} in 30 seconds`,
+        hSay: `Start heating the hob for the ${f.name} in 30 seconds` });
+    } else if (shared[app]) {
+      shared[app].t = Math.min(shared[app].t, p.prepAt);
+      shared[app].foods.push(f);
+    } else {
+      shared[app] = { t: p.prepAt, foods: [f], what: app, line: `${app}: switch on to preheat`,
+        say: `Switch on the ${app.toLowerCase()} to preheat`, hLine: `${app} on in 30 seconds`,
+        hSay: `Switch on the ${app.toLowerCase()} in 30 seconds` };
+    }
+  }
+  heat.push(...Object.values(shared));
+  const shift = Math.max(0, -Math.min(0, ...heat.map(h => h.t)));
+  plan.forEach(p => { p.start += shift; p.end = cook + shift; if (p.prepAt !== null) p.prepAt += shift; });
+  heat.forEach(h => { h.t += shift; });
+  const total = cook + shift;
   plan.forEach(p => { p.together = plan.filter(q => q !== p && q.start === p.start).map(q => q.food.name); });
-  const order = { heads: 0, warn: 1, start: 2, turn: 3, done: 4 };
+
+  const order = { heads: 0, warn: 1, prep: 2, start: 3, turn: 4, done: 5 };
   const where = f => WHERE[f.appliance] || "";
   const raw = [];
+  // an action the user must perform gets a 30s spoken heads-up and a quiet 10s tick before it
+  const act = (t, type, foods, line, say, hLine, hSay, what) => {
+    if (t >= 30) raw.push({ t: t - 30, type: "heads", foods, line: hLine, say: hSay });
+    if (t >= 15) raw.push({ t: t - 10, type: "warn", foods, line: hLine, say: "" });
+    raw.push({ t, type, foods, line, say, whats: what ? [what] : [] });
+  };
+  for (const h of heat) act(h.t, "prep", h.foods, h.line, h.say, h.hLine, h.hSay, h.what);
   for (const p of plan) {
     const f = p.food;
-    if (p.start >= 30) raw.push({ t: p.start - 30, type: "heads", foods: [f], line: `${f.name} in 30 seconds`, say: `${f.name} goes ${where(f)} in 30 seconds` });
-    if (p.start >= 15) raw.push({ t: p.start - 10, type: "warn", foods: [f], line: `${f.name} in 10 seconds`, say: "" });
-    raw.push({ t: p.start, type: "start", foods: [f], line: `${f.name} → ${f.appliance}`, say: `Put the ${f.name} ${where(f)}` });
+    act(p.start, "start", [f], `${f.name} → ${f.appliance}`, `Put the ${f.name} ${where(f)}`,
+        `${f.name} in 30 seconds`, `${f.name} goes ${where(f)} in 30 seconds`);
     if (f.turn_halfway) raw.push({ t: p.start + Math.round(f.cook_seconds / 2), type: "turn", foods: [f], line: `Turn ${f.name}`, say: `Turn the ${f.name}` });
   }
   raw.push({ t: total, type: "done", foods: [], line: "Everything is ready", say: "Everything is ready" });
+
   // merge same-type events at the same moment so simultaneous items are announced and shown together
   const merged = new Map();
   for (const e of raw) {
     const k = e.type + "@" + e.t, m = merged.get(k);
-    if (m) { m.foods.push(...e.foods); m.lines.push(e.line); m.say = [m.say, e.say].filter(Boolean).join(", and "); }
-    else merged.set(k, { t: e.t, type: e.type, foods: [...e.foods], lines: [e.line], say: e.say });
+    if (m) { m.foods.push(...e.foods); m.lines.push(e.line); m.say = [m.say, e.say].filter(Boolean).join(", and "); m.whats.push(...(e.whats || [])); }
+    else merged.set(k, { t: e.t, type: e.type, foods: [...e.foods], lines: [e.line], say: e.say, whats: [...(e.whats || [])] });
   }
   const events = [...merged.values()].sort((a, b) => a.t - b.t || order[a.type] - order[b.type]);
   return { plan, total, events };
@@ -661,7 +708,12 @@ function paintRows(el){
     const waiting = el === null || el < p.start, group = p.together.length > 0 && waiting;
     let cls = "wait", st, pct = 0;
     if (el === null) st = p.start === 0 ? "Put in now" : `Put in at +${mmss(p.start)}`;
-    else if (el < p.start) st = `in ${mmss(p.start - el)}`;
+    else if (el < p.start) {
+      if (p.prepAt !== null && el >= p.prepAt) {
+        cls = "prep"; st = `🔥 heating · in ${mmss(p.start - el)}`;
+        pct = Math.min(100, (el - p.prepAt) / (p.start - p.prepAt) * 100);
+      } else st = `in ${mmss(p.start - el)}`;
+    }
     else if (el < p.end) { cls = "cook"; st = `${mmss(p.end - el)} left`; pct = Math.min(100, (el - p.start) / cook * 100); }
     else { cls = "done"; st = "✓ Done"; pct = 100; }
     if (group) cls += " tog";
@@ -675,17 +727,18 @@ function paintRows(el){
 }
 
 function paintPre(){
-  const pre = [...new Set(run.items.filter(f => f.preheat).map(f => f.appliance))];
   const cl = clashes(run.items);
+  const heat = run.events.filter(e => e.type === "prep");
   const groups = run.events.filter(e => e.type === "start" && e.foods.length > 1);
+  const when = t => t === 0 ? "at the start" : "at +" + mmss(t);
   $("cookNote").innerHTML =
-    (groups.length ? `<strong>⚡ Together:</strong> ${esc(groups.map(g => g.foods.map(f => f.name).join(" + ") + (g.t === 0 ? " at the start" : " at +" + mmss(g.t))).join("; "))}. ` : "") +
-    (pre.length ? `Preheat first: <strong>${esc(pre.join(", "))}</strong>. ` : "") +
+    (heat.length ? `<strong>🔥 Heat-up:</strong> ${esc(heat.map(e => e.whats.join(" + ") + " " + when(e.t)).join("; "))}. ` : "") +
+    (groups.length ? `<strong>⚡ Together:</strong> ${esc(groups.map(g => g.foods.map(f => f.name).join(" + ") + " " + when(g.t)).join("; "))}. ` : "") +
     (cl.length ? `<b>⚠ Different temps in the same appliance — ${esc(cl.join("; "))}</b>` : "");
   const panel = $("cookPanel");
   panel.className = "panel";
   panel.innerHTML = `<div class="ptag">READY</div><div class="pmsg">${esc(run.meal.name)}</div>
-    <div class="pcount">${mmss(run.total)}</div><div class="pcap">total cook time · sound alerts tell you when to add each item</div>`;
+    <div class="pcount">${mmss(run.total)}</div><div class="pcap">ready this long after you start${heat.length ? " (includes heat-up)" : ""} · sound alerts tell you each step</div>`;
   paintRows(null);
   $("cookGo").textContent = "▶ Start cooking";
   $("cookGo").disabled = false;
@@ -709,20 +762,22 @@ function startRun(resumeT0){
   tick();
 }
 
-const PRIORITY = { done: 4, start: 3, turn: 2, heads: 1 };
+const PRIORITY = { done: 5, prep: 4, start: 4, turn: 2, heads: 1 };
 function fire(due){
   const loud = due.filter(e => e.type !== "warn");
   if (!loud.length) { beep(1, 520, 0.12); return; }          // quiet 10-second tick
   const top = loud.reduce((a, e) => PRIORITY[e.type] > PRIORITY[a.type] ? e : a, loud[0]).type;
-  const dur = top === "done" ? beep(4, 1046) : top === "start" ? beep(3, 880) : top === "turn" ? beep(2, 1175) : beep(2, 660);
+  const dur = top === "done" ? beep(4, 1046) : (top === "start" || top === "prep") ? beep(3, 880) : top === "turn" ? beep(2, 1175) : beep(2, 660);
   speak(loud.map(e => e.say).join(", and "), dur);
   try { navigator.vibrate && navigator.vibrate([200, 100, 200]); } catch (e) {}
   const urgent = loud.filter(e => e.type !== "heads");
   const shown = urgent.length ? urgent : loud;
-  const starts = urgent.filter(e => e.type === "start");
+  const starts = urgent.filter(e => e.type === "start"), preps = urgent.filter(e => e.type === "prep");
   const nStart = starts.reduce((n, e) => n + e.foods.length, 0);
   const tag = !urgent.length ? "GET READY"
+    : (starts.length && preps.length) ? "DO NOW"
     : starts.length ? (nStart > 1 ? `PUT IN ${nStart} ITEMS NOW` : "PUT IN NOW")
+    : preps.length ? "SWITCH ON NOW"
     : urgent.some(e => e.type === "turn") ? "TURN NOW" : "NOW";
   run.lastMsg = { lines: shown.flatMap(e => e.lines), at: (Date.now() - run.t0) / 1000, tag,
                   cls: urgent.length ? "now" : "soon", hold: urgent.length ? 10 : 8 };
@@ -748,7 +803,10 @@ function paintRun(el){
   const lm = run.lastMsg, now = lm && el - lm.at < lm.hold;
   const panel = $("cookPanel");
   panel.className = "panel" + (now ? " " + lm.cls : "");
-  const tag = now ? lm.tag : (nxt && nxt.type === "start" && nxt.foods.length > 1 ? `NEXT · ${nxt.foods.length} ITEMS TOGETHER` : "NEXT");
+  const nextTag = !nxt ? "NEXT"
+    : nxt.type === "prep" ? "NEXT · SWITCH ON"
+    : (nxt.type === "start" && nxt.foods.length > 1) ? `NEXT · ${nxt.foods.length} ITEMS TOGETHER` : "NEXT";
+  const tag = now ? lm.tag : nextTag;
   const lines = now ? lm.lines : (nxt ? nxt.lines : []);
   const sound = panel.dataset.needsound === "1" ? `<div class="pcap">🔇 Tap anywhere to turn sound back on</div>` : "";
   panel.innerHTML = `<div class="ptag">${esc(tag)}</div>${linesHTML(lines)}
